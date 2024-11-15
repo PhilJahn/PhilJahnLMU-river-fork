@@ -262,12 +262,15 @@ class CluStream(base.Clusterer):
         self.centers = self._kmeans_mc.centers
         self._kmeans_timestamp = self._timestamp
 
-    def predict_one(self, x):
-        if self._kmeans_timestamp != self._timestamp:
+    def predict_one(self, x, recluster=False):
+        if self._kmeans_timestamp != self._timestamp and recluster:
             self.offline_processing()
         index, _ = self._get_closest_mc(x)
         try:
-            return self._kmeans_mc.predict_one(self._mc_centers[index])
+            if recluster:
+                return self._kmeans_mc.predict_one(self._mc_centers[index])
+            else:
+                return self._kmeans_mc.predict_one(self.micro_clusters[index].center)
         except (KeyError, AttributeError):
             return 0
 
