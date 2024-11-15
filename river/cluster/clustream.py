@@ -140,6 +140,7 @@ class CluStream(base.Clusterer):
         self.micro_clusters: dict[int, CluStreamMicroCluster] = {}
 
         self._timestamp = -1
+        self._kmeans_timestamp = -1
         self._initialized = False
 
         self._mc_centers: dict[int, defaultdict] = {}
@@ -245,22 +246,28 @@ class CluStream(base.Clusterer):
 
         # Apply incremental K-Means on micro-clusters after each time_gap
         if self._timestamp % self.time_gap == self.time_gap - 1:
-            # Micro-cluster centers will only be saved when the calculation of macro-cluster centers
-            # is required, in order not to take up memory and time unnecessarily
-            self._mc_centers = {i: mc.center for i, mc in self.micro_clusters.items()}
+            self.offline_processing()
 
-            self._kmeans_mc = cluster.KMeans(
-                n_clusters=self.n_macro_clusters, seed=self.seed, **self.kwargs
-            )
-            for center in self._mc_centers.values():
-                self._kmeans_mc.learn_one(center)
+    def offline_processing(self):
+        # Micro-cluster centers will only be saved when the calculation of macro-cluster centers
+        # is required, in order not to take up memory and time unnecessarily
+        self._mc_centers = {i: mc.center for i, mc in self.micro_clusters.items()}
 
-            self.centers = self._kmeans_mc.centers
+        self._kmeans_mc = cluster.KMeans(
+            n_clusters=self.n_macro_clusters, seed=self.seed, **self.kwargs
+        )
+        for center in self._mc_centers.values():
+            self._kmeans_mc.learn_one(center)
+
+        self.centers = self._kmeans_mc.centers
+        self._kmeans_timestamp = self._timestamp
 
     def predict_one(self, x):
+        if self._kmeans_timestamp != self._timestamp:
+            self.offline_processing()
         index, _ = self._get_closest_mc(x)
         try:
-            return self._kmeans_mc.predict_one(self.micro_clusters[index].center)
+            return self._kmeans_mc.predict_one(self._mc_centers[index])
         except (KeyError, AttributeError):
             return 0
 
